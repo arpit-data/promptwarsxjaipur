@@ -1,0 +1,156 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── Helper Functions ─────────────────────────────────────────────
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidString(field) {
+      return field is string && field.size() > 0 && field.size() <= 2000;
+    }
+
+    function isValidNumber(field, min, max) {
+      return field is number && field >= min && field <= max;
+    }
+
+    // ─── Users ────────────────────────────────────────────────────────
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId)
+        && isValidString(request.resource.data.email)
+        && isValidString(request.resource.data.name)
+        && request.resource.data.role in ['student', 'parent', 'counselor'];
+      allow update: if isOwner(userId);
+      allow delete: if false; // Accounts are not self-deletable
+    }
+
+    // ─── User Profiles ───────────────────────────────────────────────
+    match /user_profiles/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId);
+      allow delete: if false;
+    }
+
+    // ─── Daily Check-ins ──────────────────────────────────────────────
+    match /daily_checkins/{checkinId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid
+        && isValidNumber(request.resource.data.stressScore, 1, 10)
+        && isValidNumber(request.resource.data.energyScore, 1, 10)
+        && isValidNumber(request.resource.data.sleepHours, 0, 24)
+        && isValidNumber(request.resource.data.studyHours, 0, 24);
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow delete: if false;
+    }
+
+    // ─── Journal Entries ──────────────────────────────────────────────
+    match /journal_entries/{entryId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid
+        && isValidString(request.resource.data.title)
+        && isValidString(request.resource.data.content);
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow delete: if false; // Soft-delete only
+    }
+
+    // ─── Wellness Scores ──────────────────────────────────────────────
+    match /wellness_scores/{scoreId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow delete: if false;
+
+      // Parent read access via parent_links
+      allow read: if isAuthenticated()
+        && exists(/databases/$(database)/documents/parent_links/$(request.auth.uid + '_' + resource.data.userId))
+        && get(/databases/$(database)/documents/parent_links/$(request.auth.uid + '_' + resource.data.userId)).data.active == true;
+    }
+
+    // ─── Wellness Insights ────────────────────────────────────────────
+    match /wellness_insights/{insightId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create, update: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow delete: if false;
+    }
+
+    // ─── Wellness Tasks ───────────────────────────────────────────────
+    match /wellness_tasks/{taskId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow delete: if false;
+    }
+
+    // ─── Achievements ─────────────────────────────────────────────────
+    match /achievements/{achievementId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // ─── Streaks ──────────────────────────────────────────────────────
+    match /streaks/{userId} {
+      allow read: if isOwner(userId);
+      allow create, update: if isOwner(userId);
+      allow delete: if false;
+
+      // Parent read access
+      allow read: if isAuthenticated()
+        && exists(/databases/$(database)/documents/parent_links/$(request.auth.uid + '_' + userId))
+        && get(/databases/$(database)/documents/parent_links/$(request.auth.uid + '_' + userId)).data.active == true;
+    }
+
+    // ─── Notifications ────────────────────────────────────────────────
+    match /notifications/{notifId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow delete: if false;
+    }
+
+    // ─── Parent Links ─────────────────────────────────────────────────
+    match /parent_links/{linkId} {
+      allow read: if isAuthenticated()
+        && (resource.data.parentUserId == request.auth.uid || resource.data.studentUserId == request.auth.uid);
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated()
+        && (resource.data.parentUserId == request.auth.uid || resource.data.studentUserId == request.auth.uid);
+      allow delete: if false;
+    }
+
+    // ─── Counselor Access ─────────────────────────────────────────────
+    match /counselor_access/{accessId} {
+      allow read: if isAuthenticated() && resource.data.counselorUserId == request.auth.uid;
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && resource.data.counselorUserId == request.auth.uid;
+      allow delete: if false;
+    }
+
+    // ─── AI Conversations ─────────────────────────────────────────────
+    match /ai_conversations/{convId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow delete: if false;
+    }
+
+    // ─── Safety Events ────────────────────────────────────────────────
+    match /safety_events/{eventId} {
+      allow read: if false; // Admin only
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // ─── Default Deny ─────────────────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
