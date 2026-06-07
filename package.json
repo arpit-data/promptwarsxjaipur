@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
-    "build": "vite build",
+    "build": "node -e \"require('fs').writeFileSync('.env', Object.entries(process.env).filter(([k])=>k.startsWith('VITE_')||k==='GOOGLE_GENERATIVE_AI_API_KEY').map(([k,v])=>k+'='+v).join('\\n'))\" && vite build",
     "build:dev": "vite build --mode development",
     "start": "node .output/server/index.mjs",
     "preview": "vite preview",
